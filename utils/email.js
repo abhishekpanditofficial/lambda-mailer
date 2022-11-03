@@ -6,21 +6,27 @@ const htmlToText = require('html-to-text');
 module.exports = class Email {
   constructor(eventBody) {
     this.eventBody = eventBody;
-    this.to = eventBody.email;
-    this.from = `kitsune <${process.env.EMAIL_FROM}>`;
+    this.to = process.env.EMAIL_TO;
+    this.from = `ONDC <${process.env.EMAIL_FROM}>`;
   }
 
-  // Create different transports for different environments
-  newTransport() {
+ // Create different transports for different environments
+ newTransport() {
 
-    return nodemailer.createTransport({
+    const transport = nodemailer.createTransport({
       host: process.env.EMAIL_HOST,
       port: process.env.EMAIL_PORT,
+      secure: false,
       auth: {
         user: process.env.EMAIL_USERNAME,
         pass: process.env.EMAIL_PASSWORD
       }
     });
+        transport
+        .verify()
+        .then(() => console.log("Connected to email server 📧 ..."))
+        .catch(() => console.log("Unable to connect to email server. Make sure you have configured the SMTP options."));
+    return transport;
   }
 
   // Send the actual email
@@ -30,11 +36,13 @@ module.exports = class Email {
       data: this.eventBody,
       subject
     });
+    
+    let mailList = this.to.split(',');
 
     // 2) Define email options
     const mailOptions = {
       from: this.from,
-      to: this.to,
+      to: mailList,
       subject,
       html,
       text: htmlToText.fromString(html)

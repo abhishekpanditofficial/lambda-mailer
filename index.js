@@ -1,60 +1,37 @@
 require('dotenv').config({});
 const Email = require('./utils/email');
-const AWS = require('aws-sdk');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
-const BUCKET_NAME = process.env.BUCKET_NAME;
-const IAM_USER_KEY = process.env.IAM_USER_KEY;
-const IAM_USER_SECRET = process.env.IAM_USER_SECRET;
+const mongoose = require('mongoose');
+const { mongoDB } = require("./config");
+const { OndcLeadService } = require('./services')
 
-const s3bucket = new AWS.S3({
-    accessKeyId: IAM_USER_KEY,
-    secretAccessKey: IAM_USER_SECRET
-  });
-
-function uploadObjectToS3Bucket(objectName, objectData, uuid) {
-    const params = {
-      Bucket: BUCKET_NAME,
-      Key: objectName,
-      Body: objectData
-    };
-    s3bucket.upload(params, function(err, data) {
-      if (err) throw err;
-      console.log(`File uploaded successfully at ${data.Location}`);
-      fs.stat(objectName, function (err, stats) {
-        // console.log(stats); 
-     
-        if (err) {
-            return console.error(err);
-        }
-     
-        fs.unlink(objectName,function(err){
-             if(err) return console.log(err);
-             console.log('Uploaded file deleted successfully from local');
-        });  
-     });
-    });
-}
+//MONGODB-CONFIGURE
+mongoose.connect(mongoDB.mongoDBUri, mongoDB.mongoDBOptions, () => {
+    console.log("Connected to MongoDB 📌...");
+});
 
 
-const register = async (event) => {
-    if(!event) return {  statusCode: 400, body: 'Sending failed'}
+exports.handler = async (event) => {
+    if(!event.body) return {  statusCode: 400, body: 'Sending failed'};
+    let eventPayload;
+    const eventBody = JSON.parse(event.body);
+
     try {
-        event.createdAt = new Date();
-        const data = JSON.stringify(event);
-        await new Email(event).sendRegistrationDetails();
-        let uuid = uuidv4();
-        fs.writeFile(`./logs/${event.name}-${uuid}.json`, data, err => {
-            if (err) {
-              throw err
-            }
-            uploadObjectToS3Bucket(`./logs/${event.name}-${uuid}.json`, 'test', uuid);
-          })
+        var currentTime = new Date();
+        var currentOffset = currentTime.getTimezoneOffset();
+        var ISTOffset = 330;   // IST offset UTC +5:30 
+        eventBody.createdAt = new Date(currentTime.getTime() + (ISTOffset + currentOffset)*60000);
+        await new Email(eventBody).sendRegistrationDetails();
+        eventPayload = {event: eventBody, status: true};
+        await OndcLeadService.createLead(eventPayload);
+        // mongoose.connection.close();
         return {
             statusCode: 200,
             body: 'Email sent!'
         }
     } catch (e) {
+        eventPayload = {event: eventBody, status: false};
+        await OndcLeadService.createLead(eventPayload);
+        // mongoose.connection.close();
         console.error(e);
         return {
             statusCode: 400,
@@ -63,6 +40,3 @@ const register = async (event) => {
     }
 };
 
-
-
-register({email: "abhishekpanditoff@gmail.com", name: "Abhishek Pandit"});
